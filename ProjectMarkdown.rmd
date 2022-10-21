@@ -1,0 +1,625 @@
+---
+title: "CAMPUS RECRUITMENT ANALYSIS"
+author: "Nayaab Sharma"
+output: 
+  rmdformats::readthedown
+  # prettydoc::html_pretty:
+  #     theme: cayman
+  #     highlight: github 
+  #     toc: true
+  #   toc_float: true
+  #   toc_depth: 2
+  #   number_sections: false
+  # rmarkdown::html_document:
+  #   toc: true
+  #   toc_float: true
+  #   toc_depth: 2
+  #   number_sections: false
+  #   theme: tactile #check to change this
+  # pdf_document:
+  #   highlight: tango
+  
+  
+    
+---
+# Dataset Overview
+This dataset consists of MBA campus Recruitment data, collected to analyze the factors that affect the recruitment. It was retrieved from Kaggle and contains the academic history of students who sat for campus placements in the university. The information collected has data of 215 MBA students. Below is the snippet of the dataset:
+
+```{r snippet, echo=FALSE, out.width = '100%'}
+knitr::include_graphics("Dataset_Snippet.PNG")
+```
+
+```{r setup, include=FALSE}
+library(plyr)
+library(dplyr)
+library(plotly)
+library(comprehenr)
+library(UsingR)
+library(sampling)
+library(rpart)
+library(rpart.plot)
+
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r data.setup, include=FALSE}
+placement_data <- read.csv("Placement_Data_Full_Class.csv")
+
+attach(placement_data)
+placement_data <- rename(placement_data, S.No = sl_no, 
+                         Gender = gender, 
+                         SSC_Percent = ssc_p,
+                         Education_Board = ssc_b, 
+                         Higher_Edu_Percent = hsc_p,
+                         Higher_Edu_Board = hsc_b, 
+                         Higher_Edu_Specialization = hsc_s,
+                         Degree_Percent = degree_p, 
+                         UnderGrad_Field = degree_t, 
+                         Work_Experience = workex, 
+                         Employability_Test = etest_p,
+                         Specialisation = specialisation, 
+                         MBA_Percent = mba_p, 
+                         Placement_Status = status, 
+                         Salary = salary)
+attach(placement_data)
+
+######Checking for Missing Values######
+nrows <- nrow(placement_data)
+ncols <- ncol(placement_data)
+
+sum(is.na(Salary)) == sum(Placement_Status=="Not Placed") 
+
+# 
+# for(i in seq(1:ncols)) {
+#   print(colnames(placement_data[i]))
+#   print(sum(is.na(placement_data[i])))
+# }
+
+#####MBA Percent Analysis#####
+maxp <- max(MBA_Percent);maxp 
+minp <- min(MBA_Percent);minp  
+mu_mbap <- mean(MBA_Percent);mu_mbap
+sigma_mbap <- sd(MBA_Percent);sigma_mbap 
+
+
+minp<- round_any(minp, 10)                #####Round to nearest min value
+maxp <- round_any(maxp, 10, f = ceiling)  #####Round to nearest max value
+
+#####Assigning Grades#####
+placement_data$Grade <- cut(MBA_Percent, 
+                            breaks=c(seq(minp, maxp, by=((maxp-minp)/6))),
+                            labels=c("D","C","B-","B+","A-","A")) 
+
+placement_data$Grade <- factor(placement_data$Grade,
+                               levels=c("A", "A-", "B+", "B-", "C", "D"))
+attach(placement_data)
+```
+
+
+# Objective
+  
+  - Which MBA Majors had highest recruitment?
+  - If the work experiences added value for placement?
+  - Variation in the salary.
+  - Required minimum dataset to closely align with population.
+  - Predicting placement status based on the academic history of the students.
+
+# Pre-processing
+
+Data pre-processing is done by removing any empty values in the dataset, except for the Salary column that has a conditional pre-processing of detecting the missing values only if the placement status is Placed, else it is considered a good data. A new attribute 'Grades' is added with respect to MBA percent for each individual.
+
+
+# Placement Status Analysis
+How many of the students were placed? 
+```{r pie_chart, echo=FALSE}
+
+#####Job Status#####
+df_status <- data.frame(table(Placement_Status));df_status
+
+
+
+status <- plot_ly(placement_data, labels = ~Placement_Status, 
+                  values = df_status) %>% 
+  add_pie(hole = 0.5) %>% 
+  layout(title = list(text = 'Placement Status', y=0));status
+mba_mean <- round(mean(MBA_Percent),2)
+he_mean <- round(mean(Higher_Edu_Percent),2)
+d_mean <- round(mean(Degree_Percent),2)
+et_mean <- round(mean(Employability_Test),2)
+ssc_mean <- round(mean(SSC_Percent),2)
+
+mba_var <- round(var(MBA_Percent),2)
+he_var <- round(var(Higher_Edu_Percent),2)
+d_var <- round(var(Degree_Percent),2)
+et_var <- round(var(Employability_Test),2)
+ssc_var <- round(var(SSC_Percent),2)
+```
+
+# Analysis of collective percentages
+The density curve below shows the overall percentage distribution at each level of the education.
+
+* MBA percentage distribution has normal distribution with mean of `r mba_mean` and variance is `r mba_var`.
+* Employability Test percentage distribution has slightly right skewed distribution with mean of `r et_mean` and variance is `r et_var`.
+* Degree percentage distribution has normal distribution with mean of `r d_mean` and variance is `r d_var`.
+* Higher Education percentage distribution has normal distribution with mean of `r he_mean` and variance is `r he_var`.
+* SSC percentage distribution has slightly left distribution with mean of `r ssc_mean` and variance is `r ssc_var`.
+
+```{r univariate_distributions, echo=FALSE}
+#####Density Function of Students Percentages#####
+MBA_PercentDensity <- density(MBA_Percent)
+Higher_Edu_PercentDensity <- density(Higher_Edu_Percent)
+Degree_PercentDensity <- density(Degree_Percent)
+Employability_TestDensity <- density(Employability_Test)
+SSC_PercentDensity <- density(SSC_Percent)
+
+
+#####Density Plot of Students Percentages#####
+plot_ly(x = MBA_PercentDensity$x, y = MBA_PercentDensity$y, type = "scatter", mode = "lines", yaxis = "y2", name = "MBA Percent") %>%
+  add_trace(x = Employability_TestDensity$x, y = Employability_TestDensity$y, type = "scatter", mode = "lines", yaxis = "y2", name = "Employability Test") %>%
+  add_trace(x = Degree_PercentDensity$x, y = Degree_PercentDensity$y, type = "scatter", mode = "lines", yaxis = "y2", name = "Degree Percent") %>%
+  add_trace(x = Higher_Edu_PercentDensity$x, y = Higher_Edu_PercentDensity$y, type = "scatter", mode = "lines", yaxis = "y2", name = "Higher Edu Percent") %>%
+  add_trace(x = SSC_PercentDensity$x, y = SSC_PercentDensity$y, type = "scatter", mode = "lines", yaxis = "y2", name = "SSC Percent") %>%
+  layout(xaxis = list(title = 'Score Percentage(%)'))
+
+```
+# Summary of Percentages
+
+- Any outliers observed? 
+- Decrease in range with increasing education level.
+```{r boxplot, echo=FALSE}
+#####Box PLot of Students Percentages#####
+plot_ly(placement_data, y = SSC_Percent, type="box", name = "SSC_Percent") %>%
+  add_trace(y = Higher_Edu_Percent, name = "Higher Education Percentage") %>%
+  add_trace(y = Degree_Percent, name = "Bachelor's Percentage") %>%
+  add_trace(y = Employability_Test, name = "Employability Test Percentage") %>%
+  add_trace(y = MBA_Percent, name = "MBA Percentage") %>%
+  layout(yaxis = list(title = 'Score Percentage(%)', range = c(0,100))) 
+
+```
+# Specialization and Placement Status Analysis
+
+There are a total of 120 students enrolled in Finance and 95 in HR. 
+```{r Spec_stat, echo=FALSE}
+#########Bi-Variate#########
+#####Specialization & status#####
+diff.color<-c('red', 'green4')
+fig <- plot_ly(placement_data, x=~Specialisation, color=~Placement_Status, 
+               colors=diff.color,
+               type='histogram'); fig
+```
+<b> Conclusion and Findings: </b>
+
+- The disparity between the ratio of placed to non-placed students wrt Specialization is evident.
+- With approximately 1:4 ratio for Finance and 7:9 for HR.
+- Students specializing in Finance are more sought after by the hiring committee.
+- There are more companies coming to recruit for Finance.
+
+
+# Work Experience and Placement Status Analysis
+
+There are 141 students who don't have any prior work experience and 74 who have worked before.
+```{r we_stat, echo=FALSE}
+#####Work-ex & status#####
+fig <- plot_ly(placement_data, x=~Work_Experience, color=~Placement_Status,
+               colors=diff.color, type='histogram'); fig
+
+```
+<b> Findings: </b>
+
+- 2 out of 5 were not placed if student did not have work experience.
+- 1 out of 8 were not placed if student had work experience.
+- A student having work-experience is more likely to be hired.
+
+# 3-D Scatter Plot
+
+<b>Representation:</b>
+
+  - Axis
+    - x-axis: MBA Percentage
+      - Range: `r min(MBA_Percent)` to `r max(MBA_Percent)`
+    - y-axis: Degree Percentage
+      - Range: `r min(Degree_Percent)` to `r max(Degree_Percent)`
+    - z-axis: Employability Percentage
+      - Range: `r min(Employability_Test)` to `r max(Employability_Test)`
+  - Color
+    - Black: Not Placed.
+    - Grey to Orange: Distribution in salary.
+
+<b>{Degree, MBA}: </b>Students having degree percentage <65 has a higher number of unplaced students</br>
+<b>{MBA, Emp Test}: </b>Salaries for students having scores <75,<75 are lower.
+```{r multivariate, echo=FALSE, message=FALSE}
+#####3-D Plot#####
+fig <- plot_ly(data = placement_data, x = ~MBA_Percent, y = ~Degree_Percent,
+               z = ~Employability_Test,
+               marker = list(color = ~Salary, 
+                             colorscale = c('#FFE1A1', '#683531'), 
+                             showscale = TRUE),
+               hoverinfo = 'text',
+        text = ~paste0("MBA Percent : ", MBA_Percent, "<br>", "Degree Percent : ", Degree_Percent, "<br>", "Employability_Test : ", Employability_Test));fig
+fig <- fig %>% add_markers()
+fig <- fig %>% layout(scene = list(xaxis = list(title = 'MBA_Percent'),
+                                   yaxis = list(title = 'Degree_Percent'),
+                                   zaxis = list(title = 'Employability_Test')),
+                      annotations = list(
+                        x = 1.3,
+                        y = 1.05,
+                        text = 'Placement_Status',
+                        xref = 'paper',
+                        yref = 'paper',
+                        showarrow = FALSE
+                      ));
+```
+
+# Salary Distribution
+
+```{r n_examine, echo=FALSE, message=FALSE}
+
+#######Salary distribution#######
+
+na.omit(Salary)->salary
+fit<-density(salary)
+
+options(scipen=2)
+plot_ly(x =~salary, type = "histogram", name = "Histogram", colors="Set1",
+        xaxis="Salary") %>%
+  add_trace(x = fit$x, y = fit$y, type = "scatter", mode = "lines", 
+            fill = "tozeroy", yaxis = "y2", name = "Density") %>%
+  layout(title = 'Manually Specified Labels',
+         xaxis = list(title = "Salary (k=1000)", tickformat=",.2s"),
+         yaxis2 = list(overlaying = "y", 
+                       showticklabels = FALSE, 
+                       showgrid =FALSE)) 
+
+#summary
+summary1 <- summary(salary)
+names(summary1) <- c("Minimum","1st Quartile","Median","Mean","3rd Quartile","Max")
+summary1
+
+#####Gender Disparity in Salaries####
+Male <- placement_data[which(Gender == "M"),]
+Male_Sal <- na.omit(Male$Salary)
+density1 <- density(Male_Sal)
+
+
+Females <- placement_data[which(Gender == "F"),]
+Female_Sal <- na.omit(Females$Salary)
+density2 <- density(Female_Sal)
+
+options(scipen=2)
+fig2 <- plot_ly(x = ~density1$x, y = ~density1$y, type = 'scatter',
+                mode = 'lines', name = 'Male', fill = 'tozeroy', 
+                fillcolor = 'rgba(0, 0, 434, 0.4)') %>% 
+  add_trace(x = ~density2$x, y = ~density2$y,name = 'Female',
+            fill = 'tozeroy', fillcolor = 'rgba(468, 0, 0, 0.4)') %>% 
+  layout(title = 'Salary Distribution by Gender',
+         xaxis = list(title = "Salary (k=1000)", tickformat=",.2s"),
+         yaxis = list(title = 'Density', showgrid = T, 
+                      tickformat = "000", 
+                      prob = FALSE));fig2
+plot_ly(placement_data, x = Female_Sal, type="box", name = "Female Salary") %>% 
+  add_trace(x = Male_Sal, name = "Male Salary") %>%
+  layout(xaxis = list(title = "Salary (k=1000)", tickformat=",.2s"))
+```
+
+<b>Findings: </b> 
+  
+  - Salary Distribution is highly right skewed.
+  - There are few outliers on the higher end, with upper bound 390K.
+  - The bell curve for the male salary distribution is narrower than the female salary distribution.
+  - Median salary for female is lower than the male salary.
+
+# Central Limit Therom
+
+- The Central Limit Theorm states that the sampling distribution of the sample means approaches normal distribution as the sampling size increases.
+- This is tested by taking samples from Salaries of different sample sizes
+
+```{r initializing the clt, echo=FALSE}
+#####CLT######
+options(scipen=2)
+na.omit(Salary)->salary
+
+sample.sizes<-c(10, 20, 30, 40)
+samples<-10000
+sample.mean<-c()
+sample.sd<-c()
+
+
+my.samples <- function(size) {
+
+  set.seed(45)
+  xbar <- numeric(samples)
+  for (i in seq(1:samples)) {
+    xbar[i] <- mean(sample(salary, size=size, replace=T))
+  }
+  xbar
+}
+
+samples<-data.frame("Sample=10"=my.samples(10), "Sample=20"=my.samples(20),
+                    "Sample=30"=my.samples(30), "Sample=40"=my.samples(40))
+head(samples)
+
+
+fig.10 <- plot_ly(x=~samples$Sample.10, type='histogram',
+                  name = "Sample size 10", histnorm='density') %>% 
+  layout(yaxis=list(range=c(0,0.3)))
+
+fig.20 <- plot_ly(x=~samples$Sample.20, type='histogram',
+                  name = "Sample size 20", histnorm='density') %>% 
+  layout(yaxis=list(range=c(0,0.3)))
+
+fig.30 <- plot_ly(x=~samples$Sample.30, type='histogram',
+                  name = "Sample size 30", histnorm='density')  %>% 
+  layout(yaxis=list(range=c(0,0.3)))
+
+fig.40 <- plot_ly(x=~samples$Sample.40, type='histogram',
+                  name = "Sample size 40", histnorm='density') %>% 
+  layout(yaxis=list(range=c(0,0.3)))
+
+
+fig<- plotly:: subplot(fig.10, fig.20,fig.30, fig.40, nrows = 2, shareY=T,
+                       shareX=T);fig
+
+
+for (sample in samples){
+  sample.mean <- append(sample.mean, mean(sample))
+  sample.sd <- append(sample.sd, sd(sample))
+}
+
+sprintf('For Sample Size: %d, Mean: %0.2f, Standard Deviation, %0.2f',
+        sample.sizes, sample.mean, sample.sd)
+
+```
+<!-- ## mean and sd -->
+<!-- ```{r mean_sd, echo=FALSE} -->
+<!-- cat("Sample Size = ", sample.sizes[1], " Mean = ", mean(xbar.10), -->
+<!--     " Standard Deviation = ", sd(xbar.10), "\n") -->
+<!-- cat("Sample Size = ", sample.sizes[2], " Mean = ", mean(xbar.20), -->
+<!--     " Standard Deviation = ", sd(xbar.20), "\n") -->
+<!-- cat("Sample Size = ", sample.sizes[3], " Mean = ", mean(xbar.30), -->
+<!--     " Standard Deviation = ", sd(xbar.30), "\n") -->
+<!-- cat("Sample Size = ", sample.sizes[4], " Mean = ", mean(xbar.40), -->
+<!--     " Standard Deviation = ", sd(xbar.40), "\n") -->
+<!-- ``` -->
+
+<b> Findings: </b>
+
+  - For different sample sizes, the mean of the samples is same, 288k, and the standard deviation decreases as the sample
+size is increase.
+  - The figure shows distribution of Salaries when 5000 samples are drawn.
+  - As the sample size increases the distribution becomes narrower. 
+  
+# Sampling Methods
+
+Sampling methods are applied to analyze a smaller set of the population to derive the pattern and check which method gives the best results similar to that of population. For the Campus Recruitment Project 4 sampling methods are used, 
+
+  - Simple Random Sampling Without Replacement.
+  - Systematic Sampling.
+  - Inclusion Probabilities.
+  - Stratified sampling.
+
+Placement of students for overall population is almost 1:2 for not placed to placed.
+
+```{r sampling, echo=FALSE}
+####Sampling Methods#####
+#defining sample size to be 10% of the data, so 22
+complete_freq <- table(placement_data[,c("Placement_Status","Grade")])
+t_df <- as.data.frame.matrix(complete_freq)
+t_df
+names_t_df <- factor(names(t_df),
+                     levels=c("A", "A-", "B+", "B-", "C", "D"))
+rn <- rownames(t_df)
+plot_ly(t_df, x=names_t_df,y=t(t_df[rn[1],]), type='bar',name = rn[1]) %>%
+  add_trace(y = t(t_df[rn[2],]), name = rn[2]) %>%
+  layout(yaxis = list(title = 'Placement Status Frquency'),title = "Placement status by MBA Grades",
+         barmode = 'group')
+
+
+```
+
+
+## Simple Random Sampling Without Replacement
+
+```{r sampling_srswor, echo=FALSE}
+set.seed(17)
+sample_size <- 22
+N <- nrow(placement_data)
+s <- srswor(sample_size, nrows)
+
+frequencies_srswor <- table(placement_data[s!=0,c("Placement_Status","Grade")])
+frequencies_srswor
+
+t_df <- as.data.frame.matrix(frequencies_srswor)
+names_t_df <- factor(names(t_df),
+                     levels=c("A", "A-", "B+", "B-", "C", "D"))
+rn <- rownames(t_df)
+plot_ly(t_df, x=names_t_df,y=t(t_df[rn[1],]), type='bar',name = rn[1]) %>%
+  add_trace(y = t(t_df[rn[2],]), name = rn[2]) %>%
+  layout(yaxis = list(title = 'Placement Status Frquency'),title = "Placement status by MBA Grades",
+         barmode = 'group')
+```
+
+<b> Findings: </b> 
+
+  - The top 3 grades students were all placed.
+  - Grade C has the highest Not placed students, in contrast to population.
+  - Doesn't give information regarding not placed for students in grades A, A- and B-.
+  
+  
+## Systematic Sampling
+
+```{r sampling_systematic_sampling, echo=FALSE}
+set.seed(14)
+k <- ceiling(N / sample_size)
+# k
+
+r <- sample(k, 1)
+# r
+
+s <- seq(r, by = k, length = sample_size)
+# s
+# N
+#Show the frequencies for the selected grades.
+frequency_systematic <- table(placement_data[s,c("Placement_Status","Grade")])
+frequency_systematic
+
+t_df <- as.data.frame.matrix(frequency_systematic)
+names_t_df <- factor(names(t_df),
+                     levels=c("A", "A-", "B+", "B-", "C", "D"))
+rn <- rownames(t_df)
+plot_ly(t_df, x=names_t_df,y=t(t_df[rn[1],]), type='bar',name = rn[1]) %>%
+  add_trace(y = t(t_df[rn[2],]), name = rn[2]) %>%
+  layout(yaxis = list(title = 'Placement Status Frquency'),title = "Placement status by MBA Grades",
+         barmode = 'group')
+```
+
+<b> Findings: </b> 
+
+  - Fails to provide any information of students with D grade.
+  - Doesn't give information regarding not placed students in A & B+ grade.
+  - Information for A-, B-  and C follow is almost 1:2 ration.
+
+## Inclusion Probabilities
+
+```{r sampling_inclusion_probabilities, echo=FALSE}
+placement_data_ip <- inclusionprobabilities(placement_data$Employability_Test, sample_size)
+#sum(placement_data_ip)
+
+#Using these values,
+#show the sample drawn using systematic sampling with unequal probabilities.
+s <- UPsystematic(placement_data_ip)
+# s
+
+selected_ip <- placement_data[s!=0,c("Placement_Status","Grade")]
+# head(selected_ip)
+
+
+#Show the frequencies for the selected departments.
+frquency_ip <- table(selected_ip)
+frquency_ip
+
+t_df <- as.data.frame.matrix(frquency_ip)
+names_t_df <- factor(names(t_df),
+                     levels=c("A", "A-", "B+", "B-", "C", "D"))
+rn <- rownames(t_df)
+plot_ly(t_df, x=names_t_df,y=t(t_df[rn[1],]), type='bar',name = rn[1]) %>%
+  add_trace(y = t(t_df[rn[2],]), name = rn[2]) %>%
+  layout(yaxis = list(title = 'Placement Status Frquency'),title = "Placement status by MBA Grades",
+         barmode = 'group')
+```
+
+<b> Findings: </b> 
+
+  - Fails to provide any information of students with A grade.
+  - Doesn't give information regarding placed students in A- grade.
+  - Do not provide information regarding not placed students from B- grade.
+
+## Stratified Sampling
+
+```{r sampling_stratified_sampling, echo=FALSE}
+sorted_by_grade <- placement_data[order(placement_data$Grade,
+                                        placement_data$Placement_Status
+),]
+# head(sorted_by_grade)
+#Draw a stratified sample using proportional sizes based on the Department variable.
+freq_mbaGrade <- table(sorted_by_grade[,c("Grade", "Placement_Status")])
+# freq_mbaGrade
+
+st_size <- sample_size * freq_mbaGrade / sum(freq_mbaGrade)
+
+# st_size
+
+#Draw a stratified sample using proportional sizes based on the Department variable.
+set.seed(17)
+st_size <- ifelse(st_size<1,ceiling(st_size),st_size)
+# sum(st_size)
+st_mbaGrade <- strata(sorted_by_grade, stratanames = c("Grade","Placement_Status"), size = st_size, 
+                      method = "srswor")
+# names(sorted_by_grade)
+# st_mbaGrade
+
+#Show the frequencies for the selected departments.
+frequency_st <- t(table(st_mbaGrade[,c("Grade", "Placement_Status")]))
+
+frequency_st
+
+t_df <- as.data.frame.matrix(frequency_st)
+# names(t_df)
+names_t_df <- factor(names(t_df),
+                     levels=c("A", "A-", "B+", "B-", "C", "D"))
+rn <- rownames(t_df)
+plot_ly(t_df, x=names_t_df,y=t(t_df[rn[1],]), type='bar',name = rn[1]) %>%
+  add_trace(y = t(t_df[rn[2],]), name = rn[2]) %>%
+  layout(yaxis = list(title = 'Placement Status Frquency'),title = "Placement status by MBA Grades",
+         barmode = 'group')
+```
+
+<b> Findings: </b> 
+
+  - Gives information for all the grades, but looks to be left skewed.
+  - Equal placement for Grade A and B- is misleading(1:1). 
+  - Grades B+ and D have information in contrast to population
+
+# Decision Tree Classification
+
+Binary classification is performed on the dataset to predict the placement status of the students. Decision Tree Classification Algorithm is chosen for this process.
+
+<p> Initially, the data set was divided into training set and testing set using the sample function. A model is created by fitting the training dataset, which is used on the test data to predict Placement status. The confusion matrix gives the performance metrics. Accuracy, F1-score and Precision for the model are calculated.</p>
+```{r classification1, echo=FALSE}
+
+#########Classification#########
+set.seed(1147)
+
+#Train test split
+dt = sort(sample(nrow(placement_data), nrow(placement_data)*.7))
+train<-placement_data[dt,]
+test<-placement_data[-dt,]
+
+
+#fit the model on Training set
+fit <- rpart(Placement_Status~., data = train, method = 'class')
+rpart.plot(fit, extra = 106)
+```
+
+<b>Findings</b> - Based on the SSC percentages, HSC percentages, Gender, and Degree percent, the algorithm created an automated decision tree where it shows the probability of students getting placed.
+
+## Confusion Matrix
+
+```{r classification2, echo=FALSE}
+#Predict on Test set
+predict_unseen <-predict(fit, test, type = 'class')
+
+#confusion matrix
+table_mat <- table(Actual=test$Placement_Status, Predicted = predict_unseen)
+addmargins(table_mat)
+```
+
+## Performance Measures
+
+```{r classification3, echo=FALSE}
+#performance metrics
+TN =table_mat[1,1]
+TP =table_mat[2,2]
+FP =table_mat[1,2]
+FN =table_mat[2,1]
+
+
+accuracy <- (TP+TN)/(TP+TN+FP+FN)
+precision <- TP / (TP + FP) 
+recall <- TP/(TP+FN)
+
+F1_score <- (2*precision*recall)/(precision+recall) 
+
+
+sprintf("Precision for predicting the status of job is: %0.2f%%", precision*100)
+sprintf("F1 Score for predicting the status of job is: %f", F1_score)
+sprintf("Accuracy for predicting the status of job is: %0.2f%%", accuracy*100)
+
+```
+
+# Conclusion
+
+  - Marketing and Finance has higher recruitment rate.
+  - "Not placed" rate is significantly lower for students with prior Work experience.
+  - Male student with B- grade got the highest salary.
+  - Systematic Sampling is chosen as best sampling method for the given population.
+  - The model gives accuracy of 86.15%.
